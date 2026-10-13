@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>颗粒物与昼夜温差</title>
+<style>
+/* 布局：左器材 / 中画布与曲线 / 右记录表，三栏；窄屏单栏。课堂投影用浅色为主 */
+:root{
+  --bg:#f2f4f6; --panel:#ffffff; --line:#d3d9df; --text:#1e2a33; --muted:#5b6873; --head:#eceff3;
+  --a:#1f63c6; --b:#bf521a; --warn:#b03a2e; --btn:#2f5d8a; --btn-fg:#ffffff;
+  --sky-day:#eaf2fa; --sky-night:#1c2737; --ground:#9b7b55; --ground-edge:#7d6142;
+  --sw:#d99a00; --lw:#d9534a; --back:#f08a80; --plot:#ffffff; --plot-day:#fcf6df; --plot-night:#e2e8f0; --grid:#e1e5ea; --axis:#7a8590;
+  --focus:#7fb0e6;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#151b22; --panel:#1d252e; --line:#33404c; --text:#e3e9ef; --muted:#9aa7b3; --head:#25303b;
+    --a:#6aa6f2; --b:#f08d55; --warn:#f08070; --btn:#7fa9d6; --btn-fg:#10161c;
+    --sky-day:#dfe9f3; --sky-night:#16202d; --plot:#1a2129; --plot-day:#2e2b1e; --plot-night:#1f2a38; --grid:#2c3742; --axis:#8795a2;
+    --focus:#4d86c7; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#151b22; --panel:#1d252e; --line:#33404c; --text:#e3e9ef; --muted:#9aa7b3; --head:#25303b;
+  --a:#6aa6f2; --b:#f08d55; --warn:#f08070; --btn:#7fa9d6; --btn-fg:#10161c;
+  --sky-day:#dfe9f3; --sky-night:#16202d; --plot:#1a2129; --plot-day:#2e2b1e; --plot-night:#1f2a38; --grid:#2c3742; --axis:#8795a2;
+  --focus:#4d86c7; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:"Microsoft YaHei","PingFang SC","Noto Sans SC","Source Han Sans SC",sans-serif;font-size:15px;line-height:1.5}
+header{background:var(--panel);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 16px}
+header h1{font-size:20px;margin:0;text-wrap:balance}
+header .sub{color:var(--muted);font-size:14px}
+.layout{display:grid;grid-template-columns:270px minmax(0,1fr) 340px;gap:12px;padding-block:12px;padding-inline:16px;align-items:start}
+.layout > *{min-width:0}
+@media (max-width:1150px){.layout{grid-template-columns:minmax(0,1fr)}}
+.col{display:grid;gap:12px;grid-template-columns:minmax(0,1fr)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+.panel h2{font-size:16px;margin:0 0 8px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+label.eq{display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer}
+label.eq input{width:18px;height:18px}
+.row{display:flex;align-items:center;gap:8px;margin:6px 0}
+.row span.k{flex:0 0 76px;color:var(--muted)}
+.row input[type=range]{flex:1;min-width:0}
+.row output{flex:0 0 58px;text-align:right;font-variant-numeric:tabular-nums}
+.seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg label{flex:1;text-align:center;padding:6px 0;cursor:pointer;user-select:none}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg label:has(input:checked){background:var(--btn);color:var(--btn-fg)}
+.seg label:has(input:focus-visible){outline:2px solid var(--focus);outline-offset:-2px}
+.seg label.disabled{cursor:not-allowed}
+.seg label.disabled:not(:has(input:checked)){opacity:.5}
+button,select{font:inherit}
+button{border:1px solid var(--btn);background:var(--panel);color:var(--btn);border-radius:6px;padding:6px 10px;cursor:pointer}
+button.primary{background:var(--btn);color:var(--btn-fg)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+select{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:4px}
+.btns{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.btns button{flex:1 1 auto}
+.hint{font-size:13px;color:var(--muted);margin:6px 0 0}
+.warn{color:var(--warn);font-size:13px;min-height:1.2em;margin-top:6px}
+.status{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center;margin-bottom:8px}
+.status b{font-variant-numeric:tabular-nums;font-size:17px}
+.tag{display:inline-block;padding:1px 9px;border-radius:10px;font-size:13px;border:1px solid var(--line)}
+.tag.day{background:var(--plot-day);border-color:var(--sw)}
+.tag.night{background:var(--sky-night);color:#e8edf3;border-color:var(--sky-night)}
+canvas{display:block;width:100%}
+#scene{height:370px;border:1px solid var(--line);border-radius:6px}
+#chart{height:310px}
+.readout{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-top:8px}
+.readout div{border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-variant-numeric:tabular-nums}
+.readout .ra{border-left:5px solid var(--a)}
+.readout .rb{border-left:5px solid var(--b)}
+.readout b{font-size:22px}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th,td{border:1px solid var(--line);padding:3px 4px;text-align:center;font-size:14px}
+th{background:var(--head);font-weight:600;white-space:nowrap}
+td input{width:100%;min-width:2.5em;border:none;background:transparent;color:var(--text);font:inherit;text-align:center;padding:2px 0}
+td button{padding:0 6px;font-size:13px;border-color:var(--line);color:var(--muted)}
+.tablewrap{max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:4px}
+.tablewrap table th{position:sticky;top:0;z-index:1}
+.tablewrap table{border-style:hidden}
+td input.ct{min-width:6.2em}
+.res td.out{font-weight:600}
+.resw{overflow-x:auto}
+#conclusion{margin-top:8px;font-size:14px;min-height:1.5em}
+.model p{margin:4px 0;font-size:14px;max-width:70em}
+.model ul{margin:4px 0;padding-left:20px;font-size:14px}
+.ca{color:var(--a);font-weight:600}.cb{color:var(--b);font-weight:600}
+#copybox{width:100%;height:80px;margin-top:6px;font-size:12px;background:var(--panel);color:var(--text);border:1px solid var(--line)}
+</style>
+</head>
+<body>
+<header>
+  <h1>虚拟实验：大气悬浮颗粒物对昼夜温差的影响</h1>
+  <span class="sub">高中地理 · 大气的受热过程 · 简化热量平衡模型</span>
+</header>
+
+<div class="layout">
+  <!-- 左侧：器材与控制 -->
+  <aside class="col">
+    <div class="panel">
+      <h2>① 器材选择</h2>
+      <label class="eq"><input type="checkbox" id="eqBox"> 玻璃箱 ×2（A、B）</label>
+      <label class="eq"><input type="checkbox" id="eqThermo"> 温度计 ×2</label>
+      <label class="eq"><input type="checkbox" id="eqSmoke"> 烟雾发生器（仅放入 B 箱）</label>
+      <div class="row"><span class="k">烟雾浓度</span><input type="range" id="smoke" min="0" max="100" step="10" value="60" disabled><output id="smokeOut">60%</output></div>
+      <p class="hint">A 箱始终保持洁净，作为对照组。</p>
+    </div>
+
+    <div class="panel">
+      <h2>② 控制变量（A、B 相同）</h2>
+      <div class="row"><span class="k">初始温度</span><input type="range" id="t0" min="5" max="25" step="1" value="15"><output id="t0Out">15 ℃</output></div>
+      <div class="row"><span class="k">光照强度</span><input type="range" id="light" min="50" max="150" step="10" value="100"><output id="lightOut">100%</output></div>
+      <p class="hint">箱体材质、热容、散热条件均相同且固定。初始温度只能在重置后修改。</p>
+    </div>
+
+    <div class="panel">
+      <h2>③ 昼夜模式开关</h2>
+      <div class="seg">
+        <label id="lblDay"><input type="radio" name="mode" id="modeDay" value="day" checked> ☀ 白天模式</label>
+        <label id="lblNight"><input type="radio" name="mode" id="modeNight" value="night"> ☾ 夜晚模式</label>
+      </div>
+      <p class="hint">白天 06:00–18:00（12 h，有太阳短波输入）；夜晚 18:00–次日 06:00（12 h，只有长波散热）。每个时段运行满 12 h 自动停止。启动前可选择从哪个时段开始；之后开关会自动跟随时刻切换。</p>
+      <div class="row"><span class="k">运行速度</span><input type="range" id="speed" min="0.5" max="4" step="0.5" value="1.5"><output id="speedOut">1.5 h/秒</output></div>
+    </div>
+
+    <div class="panel">
+      <h2>④ 启动 / 重置</h2>
+      <div class="btns" style="margin-top:0">
+        <button class="primary" id="btnRun">▶ 启动</button>
+        <button id="btnReset">↺ 重置</button>
+      </div>
+      <div class="btns">
+        <button id="btnVDay">一键运行“虚拟日”（白天 → 夜晚，共 24 h）</button>
+      </div>
+      <div class="warn" id="warn" role="status"></div>
+    </div>
+  </aside>
+
+  <!-- 中间：画布与曲线 -->
+  <main class="col">
+    <div class="panel">
+      <div class="status">
+        <span>当前时段：<span class="tag day" id="phaseTag">白天</span></span>
+        <span>时刻：<b id="clockOut">06:00</b></span>
+        <span>已运行：<b id="elapsedOut">0.0</b> h</span>
+        <span id="runState" class="hint" style="margin:0">未启动</span>
+      </div>
+      <canvas id="scene" aria-label="两个玻璃箱示意图"></canvas>
+      <div class="readout">
+        <div class="ra">A 箱（洁净）温度：<b id="ra">--</b> ℃</div>
+        <div class="rb">B 箱（烟雾）温度：<b id="rb">--</b> ℃</div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>温度—时间曲线</h2>
+      <canvas id="chart" aria-label="温度随时间变化曲线"></canvas>
+      <p class="hint">浅黄色背景为白天，浅灰蓝色背景为夜晚。圆点标出白天的最高温和夜间（至次日日出）的最低温。</p>
+    </div>
+    <div class="panel model">
+      <h2>模型说明（请先读）</h2>
+      <p>本实验是<b>简化教学模型</b>，只用来检验物理趋势，<b>不是</b>对真实大气的精确复现；屏幕上的温度数值不代表真实观测值。</p>
+      <ul>
+        <li>箱内温度变化 = 地面吸收的太阳短波辐射 − 地面散热（温度越高散热越快）。</li>
+        <li>太阳短波：06:00 日出，12:00 最强，18:00 日落，按正弦规律变化。</li>
+        <li>正午过后，太阳辐射虽然减弱，但地面吸收的热量仍多于散失的热量，温度继续上升，约到 14 时前后收支平衡，出现<b>最高温</b>；夜间只散热不吸收，温度持续下降，到<b>日出前后</b>降到最低。</li>
+        <li><b>白天模式</b>：烟雾（悬浮颗粒物）只起一个作用：削弱到达箱内地面的太阳短波辐射，使升温变慢。</li>
+        <li><b>夜晚模式</b>：没有短波输入；烟雾只起一个作用：增强向下的长波逆辐射，补偿地面部分散热，使降温变慢。</li>
+        <li>A、B 两箱的热容、初始温度、光照强度、散热条件完全相同，唯一的自变量是 B 箱是否有烟雾及其浓度。</li>
+        <li>两箱从同一初始温度开始，所以<b>最低温请读取夜间至次日日出（18:00–次日 06:00）这一段</b>。</li>
+        <li>模型忽略风、对流、水汽、云、颗粒物自身吸热等复杂因子。</li>
+      </ul>
+    </div>
+  </main>
+
+  <!-- 右侧：数据记录 -->
+  <aside class="col">
+    <div class="panel">
+      <h2>⑤ 数据记录表</h2>
+      <div class="btns" style="margin-top:0">
+        <button id="btnRec">记录当前读数</button>
+        <button id="btnAddRow">添加空行</button>
+      </div>
+      <label class="eq" style="font-size:14px"><input type="checkbox" id="autoRec"> 每隔
+        <select id="recGap"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option></select> h 自动记录</label>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>#</th><th>时刻</th><th>时段</th><th class="ca">A 温/℃</th><th class="cb">B 温/℃</th><th></th></tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+      <div class="btns">
+        <button id="btnCopy">复制表格数据</button>
+        <button id="btnClear">清空表格</button>
+      </div>
+      <textarea id="copybox" hidden readonly></textarea>
+      <p class="hint" id="copyHint"></p>
+    </div>
+
+    <div class="panel">
+      <h2>⑥ 计算昼夜温差</h2>
+      <div class="resw">
+      <table class="res">
+        <thead><tr><th></th><th>最高温/℃</th><th>最低温/℃</th><th>昼夜温差/℃</th></tr></thead>
+        <tbody>
+          <tr><th class="ca">A 箱</th><td><input id="maxA" inputmode="decimal" aria-label="A箱最高温"></td><td><input id="minA" inputmode="decimal" aria-label="A箱最低温"></td><td class="out" id="diffA">—</td></tr>
+          <tr><th class="cb">B 箱</th><td><input id="maxB" inputmode="decimal" aria-label="B箱最高温"></td><td><input id="minB" inputmode="decimal" aria-label="B箱最低温"></td><td class="out" id="diffB">—</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p class="hint">最高温取白天，最低温取夜间至次日日出。可以自己填写后点“计算温差”，也可以自动填入。</p>
+      <div class="btns">
+        <button class="primary" id="btnCalc">计算温差</button>
+        <button id="btnFromTable">按记录表自动填入</button>
+        <button id="btnFromCurve">按模拟曲线自动填入</button>
+      </div>
+      <div id="conclusion"></div>
+    </div>
+  </aside>
+</div>
+
+<script>
+(function(){
+"use strict";
+const $ = id => document.getElementById(id);
+
+/* ---------- 简化热量平衡模型（单位：℃ / 小时） ----------
+   dT/dt = 短波(t) − K·(T − T0) + 逆辐射增量
+   短波(t) = S0 × 光照 × (1 − ALPHA×烟雾) × sin(π(时刻−6)/12)，仅 06:00–18:00
+   逆辐射增量 = BETA × 烟雾 × G，仅夜晚
+   洁净箱在光照 100% 时，24 h 后恰好回到初始温度，形成一个完整的“日循环”。 */
+const P = {
+  S0: 7.0,      // 正午短波带来的最大升温速率
+  K: 0.30,      // 地面散热系数（A、B 相同）
+  ALPHA: 0.45,  // 烟雾浓度 100% 时对短波的最大削弱比例
+  BETA: 0.6, G: 2.0, // 夜晚：烟雾浓度 100% 时逆辐射增量 = 1.2 ℃/h
+  DT: 0.01, HIST_DT: 0.1, MAX_SPAN: 72
+};
+const SUNRISE = 6, SUNSET = 18;
+
+const st = { t:6, start:6, TA:15, TB:15, isDay:true, running:false, virtual:false, segEnd:18, vEnd:30, done:false,
+             hist:[], lastHist:-1, nextRec:null };
+
+const clockOf = t => ((t % 24) + 24) % 24;
+const isDayAt = t => { const c = clockOf(t + 1e-6); return c >= SUNRISE && c < SUNSET; };
+const pad2 = n => String(n).padStart(2, '0');
+function fmtClock(t, withDay){
+  const m = Math.round(t * 60), d = Math.floor(m / 1440), c = ((m % 1440) + 1440) % 1440;
+  const s = pad2(Math.floor(c / 60)) + ':' + pad2(c % 60);
+  return (withDay && d > 0) ? (d === 1 ? '次日 ' : '第' + (d + 1) + '天 ') + s : s;
+}
+function nextBoundary(t){   // 当前时段结束的绝对时刻
+  const c = clockOf(t + 1e-6), base = t - c;
+  if (c >= SUNRISE && c < SUNSET) return base + SUNSET;
+  return c < SUNRISE ? base + SUNRISE : base + 24 + SUNRISE;
+}
+
+function prm(){
+  return {
+    T0: +$('t0').value,
+    light: +$('light').value / 100,
+    smoke: $('eqSmoke').checked ? +$('smoke').value / 100 : 0,
+    speed: +$('speed').value
+  };
+}
+function sunFactor(t){ const c = clockOf(t); return (c >= SUNRISE && c <= SUNSET) ? Math.max(0, Math.sin(Math.PI * (c - SUNRISE) / 12)) : 0; }
+function terms(T, s, isDay, t, p){
+  const sw = isDay ? P.S0 * p.light * (1 - P.ALPHA * s) * sunFactor(t) : 0;
+  const back = isDay ? 0 : P.BETA * s * P.G;
+  const loss = P.K * (T - p.T0);
+  return { rate: sw - loss + back, sw, back, loss };
+}
+
+function pushHist(){ st.hist.push({ t: st.t, A: st.TA, B: st.TB, day: st.isDay }); st.lastHist = st.t; }
+
+function step(hours){
+  const p = prm();
+  const n = Math.max(1, Math.round(hours / P.DT));
+  for (let i = 0; i < n; i++){
+    if (st.t >= st.segEnd - 1e-9){
+      pushHist();
+      if (st.virtual && st.t < st.vEnd - 1e-9){
+        st.isDay = isDayAt(st.t); st.segEnd = nextBoundary(st.t); syncModeRadio();
+      } else {
+        const wasDay = st.isDay;
+        stopAtBoundary(wasDay);
+        return;
+      }
+    }
+    const fa = terms(st.TA, 0, st.isDay, st.t, p), fb = terms(st.TB, p.smoke, st.isDay, st.t, p);
+    st.TA += fa.rate * P.DT;
+    st.TB += fb.rate * P.DT;
+    st.t = Math.round((st.t + P.DT) * 1000) / 1000;
+    if (st.t - st.lastHist >= P.HIST_DT - 1e-9) pushHist();
+    if ($('autoRec').checked && st.nextRec !== null && st.t >= st.nextRec - 1e-9){ recordNow(); st.nextRec += +$('recGap').value; }
+  }
+}
+function stopAtBoundary(wasDay){
+  const virtual = st.virtual;
+  st.running = false; st.virtual = false; st.done = true;
+  if (virtual) $('warn').textContent = '“虚拟日”运行结束（06:00 → 次日 06:00，共 24 h）。';
+  else if (wasDay) $('warn').textContent = '白天 12 h 已结束（18:00），已自动停止。点击“继续”运行夜晚模式。';
+  else $('warn').textContent = '夜晚 12 h 已结束（次日 06:00），已自动停止。点击“继续”运行下一个白天。';
+  st.isDay = isDayAt(st.t);   // 开关跳到下一个时段
+  syncModeRadio(); updateButtons();
+}
+
+/* ---------- 运行控制 ---------- */
+function canRun(){
+  if (!$('eqBox').checked || !$('eqThermo').checked){
+    $('warn').textContent = '请先在“器材选择”中勾选玻璃箱和温度计。';
+    return false;
+  }
+  $('warn').textContent = '';
+  return true;
+}
+function startRun(){
+  if (!canRun()) return;
+  if (st.t - st.start >= P.MAX_SPAN - 1e-9){ $('warn').textContent = '已连续模拟 72 h，请重置后再做。'; return; }
+  if (st.hist.length === 0){
+    pushHist();
+    if ($('autoRec').checked){ recordNow(); st.nextRec = st.t + +$('recGap').value; }
+  }
+  st.isDay = isDayAt(st.t);
+  st.segEnd = nextBoundary(st.t);
+  syncModeRadio();
+  st.running = true; st.done = false; updateButtons();
+}
+function pauseRun(){ st.running = false; updateButtons(); }
+function reset(){
+  st.running = false; st.virtual = false; st.done = false;
+  st.isDay = $('modeDay').checked;
+  st.t = st.start = st.isDay ? SUNRISE : SUNSET;
+  st.segEnd = nextBoundary(st.t);
+  st.TA = st.TB = +$('t0').value; st.hist = []; st.lastHist = -1; st.nextRec = null;
+  $('warn').textContent = '';
+  updateButtons();
+}
+function runVirtualDay(){
+  if (!canRun()) return;
+  $('modeDay').checked = true;
+  reset();
+  st.virtual = true; st.vEnd = st.t + 24;
+  startRun();
+}
+function syncModeRadio(){ (st.isDay ? $('modeDay') : $('modeNight')).checked = true; }
+function updateButtons(){
+  const started = st.hist.length > 0;
+  $('btnRun').textContent = st.running ? '❚❚ 暂停' : (started ? '▶ 继续' : '▶ 启动');
+  $('runState').textContent = st.running ? (st.virtual ? '正在运行“虚拟日”…' : '正在运行' + (st.isDay ? '白天' : '夜晚') + '模式…')
+                              : (st.done ? '本时段已结束' : started ? '已暂停' : '未启动');
+  $('t0').disabled = started;
+  const lock = started || st.running;
+  [$('modeDay'), $('modeNight')].forEach(r => r.disabled = lock);
+  $('lblDay').classList.toggle('disabled', lock);
+  $('lblNight').classList.toggle('disabled', lock);
+}
+
+/* ---------- 数据记录表 ---------- */
+function addRow(time, phase, a, b){
+  const tr = document.createElement('tr');
+  const cell = (cls, val, label) => {
+    const td = document.createElement('td'), inp = document.createElement('input');
+    inp.className = cls; inp.value = val == null ? '' : val; inp.setAttribute('aria-label', label);
+    td.appendChild(inp); return td;
+  };
+  const n = document.createElement('td'); tr.appendChild(n);
+  tr.appendChild(cell('ct', time, '时刻'));
+  tr.appendChild(cell('cp', phase, '时段'));
+  tr.appendChild(cell('ca2', a, 'A箱温度'));
+  tr.appendChild(cell('cb2', b, 'B箱温度'));
+  const td = document.createElement('td'), del = document.createElement('button');
+  del.textContent = '×'; del.title = '删除此行';
+  del.onclick = () => { tr.remove(); renumber(); };
+  td.appendChild(del); tr.appendChild(td);
+  $('tbody').appendChild(tr);
+  renumber();
+  const wrap = document.querySelector('.tablewrap'); wrap.scrollTop = wrap.scrollHeight;
+}
+function renumber(){ [...$('tbody').rows].forEach((r,i) => r.cells[0].textContent = i + 1); }
+function recordNow(){
+  if (!$('eqThermo').checked){ $('warn').textContent = '没有温度计，无法读数。'; return; }
+  addRow(fmtClock(st.t, true), st.isDay ? '昼' : '夜', st.TA.toFixed(1), st.TB.toFixed(1));
+}
+function tableData(){
+  return [...$('tbody').rows].map(r => ({
+    t: r.querySelector('.ct').value.trim(), p: r.querySelector('.cp').value.trim(),
+    a: r.querySelector('.ca2').value.trim(), b: r.querySelector('.cb2').value.trim()
+  }));
+}
+function copyTable(){
+  const rows = [['序号','时刻','时段','A温/℃','B温/℃']].concat(tableData().map((d,i) => [i+1, d.t, d.p, d.a, d.b]));
+  const tsv = rows.map(r => r.join('\t')).join('\n');
+  const box = $('copybox');
+  const fallback = () => {
+    box.hidden = false; box.value = tsv; box.focus(); box.select();
+    $('copyHint').textContent = '无法自动复制，已选中下方文本，请按 Ctrl+C 复制。';
+  };
+  try {
+    navigator.clipboard.writeText(tsv).then(() => {
+      box.hidden = true; $('copyHint').textContent = '已复制 ' + (rows.length - 1) + ' 行，可直接粘贴到 Excel 或 WPS 表格。';
+    }, fallback);
+  } catch (e){ fallback(); }
+}
+let clearArmed = null;
+function clearTable(){
+  if (!$('tbody').rows.length) return;
+  if (clearArmed){
+    clearTimeout(clearArmed); clearArmed = null;
+    $('tbody').innerHTML = ''; $('btnClear').textContent = '清空表格';
+    return;
+  }
+  $('btnClear').textContent = '再点一次确认清空';
+  clearArmed = setTimeout(() => { clearArmed = null; $('btnClear').textContent = '清空表格'; }, 3000);
+}
+
+/* ---------- 温差计算 ---------- */
+const num = s => { const x = parseFloat(String(s).replace('，','.')); return isFinite(x) ? x : null; };
+function calc(){
+  const r = {};
+  ['A','B'].forEach(k => {
+    const mx = num($('max'+k).value), mn = num($('min'+k).value);
+    r[k] = (mx !== null && mn !== null) ? mx - mn : null;
+    $('diff'+k).textContent = r[k] === null ? '—' : r[k].toFixed(1);
+  });
+  const c = $('conclusion');
+  if (r.A === null || r.B === null){ c.innerHTML = '<span class="hint">请填写两箱的最高温和最低温。</span>'; return; }
+  const d = r.A - r.B;
+  let s = 'A 箱昼夜温差 <span class="ca">' + r.A.toFixed(1) + ' ℃</span>，B 箱昼夜温差 <span class="cb">' + r.B.toFixed(1) + ' ℃</span>。';
+  if (Math.abs(d) < 0.05) s += '两箱温差相同。（B 箱是否放入了烟雾？）';
+  else s += (d > 0 ? 'B 箱比 A 箱小 ' : 'B 箱比 A 箱大 ') + Math.abs(d).toFixed(1) + ' ℃。';
+  s += '<br><span class="hint" style="margin:0">思考：B 箱的最高温为什么偏低？最低温为什么偏高？分别对应大气的哪种作用？</span>';
+  c.innerHTML = s;
+}
+function fill(maxA, maxB, minA, minB, note){
+  if (!maxA.length || !minA.length || !maxB.length || !minB.length){
+    $('conclusion').innerHTML = '<span class="warn">' + note + '</span>'; return;
+  }
+  $('maxA').value = Math.max(...maxA).toFixed(1); $('minA').value = Math.min(...minA).toFixed(1);
+  $('maxB').value = Math.max(...maxB).toFixed(1); $('minB').value = Math.min(...minB).toFixed(1);
+  calc();
+}
+function fromTable(){
+  const d = tableData();
+  const day = d.filter(x => x.p !== '夜'), night = d.filter(x => x.p === '夜');
+  const vals = (arr, k) => arr.map(x => num(x[k])).filter(x => x !== null);
+  fill(vals(day,'a'), vals(day,'b'), vals(night,'a'), vals(night,'b'),
+       '记录表中需要同时有“昼”和“夜”的读数（最低温取“夜”的行）。');
+}
+function fromCurve(){
+  const day = st.hist.filter(h => h.day), night = st.hist.filter(h => !h.day);
+  fill(day.map(h => h.A), day.map(h => h.B), night.map(h => h.A), night.map(h => h.B),
+       '模拟曲线需要同时包含白天和夜晚，请先运行完整的“虚拟日”。');
+}
+
+/* ---------- 画布工具 ---------- */
+let css = {};
+function readTokens(){
+  const cs = getComputedStyle(document.documentElement), g = n => cs.getPropertyValue('--' + n).trim();
+  css = { text:g('text'), muted:g('muted'), a:g('a'), b:g('b'), skyDay:g('sky-day'), skyNight:g('sky-night'),
+          ground:g('ground'), groundEdge:g('ground-edge'), sw:g('sw'), lw:g('lw'), back:g('back'),
+          plot:g('plot'), plotDay:g('plot-day'), plotNight:g('plot-night'), grid:g('grid'), axis:g('axis'), line:g('line') };
+}
+function fit(cv){
+  const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  if (cv.width !== Math.round(w*dpr) || cv.height !== Math.round(h*dpr)){ cv.width = Math.round(w*dpr); cv.height = Math.round(h*dpr); }
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0);
+  return { ctx, w, h };
+}
+const FONT = '"Microsoft YaHei","PingFang SC","Noto Sans SC",sans-serif';
+const font = (px, bold) => (bold ? 'bold ' : '') + px + 'px ' + FONT;
+function arrow(ctx, x1, y1, x2, y2, width, color, dashed){
+  if (width < 0.5) return;
+  const ang = Math.atan2(y2-y1, x2-x1), head = 6 + width * 1.5;
+  ctx.save(); ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = width;
+  if (dashed) ctx.setLineDash([6,5]);
+  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2 - Math.cos(ang)*head*0.8, y2 - Math.sin(ang)*head*0.8); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(x2,y2);
+  ctx.lineTo(x2 - head*Math.cos(ang - 0.42), y2 - head*Math.sin(ang - 0.42));
+  ctx.lineTo(x2 - head*Math.cos(ang + 0.42), y2 - head*Math.sin(ang + 0.42));
+  ctx.closePath(); ctx.fill(); ctx.restore();
+}
+// 固定的烟雾颗粒位置（静态，不做动画）
+const particles = Array.from({length:160}, (_, i) => {
+  const r = Math.sin(i * 12.9898 + 78.233) * 43758.5453, r2 = Math.sin(i * 39.3468 + 11.135) * 24634.6345;
+  return { x: r - Math.floor(r), y: r2 - Math.floor(r2), s: 1.2 + ((i * 7) % 5) * 0.35 };
+});
+
+/* ---------- 场景：两个箱子 ---------- */
+function drawScene(){
+  const { ctx, w, h } = fit($('scene'));
+  const day = st.isDay, p = prm();
+  ctx.fillStyle = day ? css.skyDay : css.skyNight; ctx.fillRect(0,0,w,h);
+  const txt = day ? '#1e2a33' : '#e8edf3';   // 场景自带天空底色，文字随天空而定
+  const sf = day ? sunFactor(st.t) : 0;
+
+  // 太阳沿天空从东到西移动 / 月亮
+  if (day){
+    const f = Math.min(1, Math.max(0, (clockOf(st.t) - SUNRISE) / 12));
+    const sx = 30 + f * (w - 60), sy = 70 - Math.sin(Math.PI * f) * 44;
+    ctx.fillStyle = '#f2b705'; ctx.beginPath(); ctx.arc(sx, sy, 16, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = txt; ctx.font = font(13); ctx.textAlign = 'center';
+    ctx.fillText('太阳辐射强度 ' + Math.round(sf * p.light * 100) + '%', w/2, 16);
+  } else {
+    const cx = w/2, cy = 36;
+    ctx.fillStyle = '#d9dee6'; ctx.beginPath(); ctx.arc(cx, cy, 15, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = css.skyNight; ctx.beginPath(); ctx.arc(cx + 7, cy - 5, 13, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = txt; ctx.font = font(13); ctx.textAlign = 'center'; ctx.fillText('夜晚：无太阳短波输入', cx, cy + 34);
+  }
+
+  if (!$('eqBox').checked){
+    ctx.fillStyle = txt; ctx.font = font(18); ctx.textAlign = 'center';
+    ctx.fillText('请在左侧“器材选择”中勾选玻璃箱', w/2, h/2 + 20);
+    return;
+  }
+
+  const gap = Math.max(30, w * 0.08);
+  const bw = Math.min(250, (w - gap - 24) / 2), bh = 200;
+  const by = 100, groundH = 26;
+  const boxes = [
+    { x: w/2 - gap/2 - bw, name: 'A 箱（洁净）', color: css.a, T: st.TA, s: 0 },
+    { x: w/2 + gap/2,      name: 'B 箱（烟雾 ' + Math.round(p.smoke*100) + '%）', color: css.b, T: st.TB, s: p.smoke }
+  ];
+  const gy = by + bh - groundH, smokeTop = by + 18, smokeBot = by + bh * 0.48;
+
+  boxes.forEach(b => {
+    ctx.fillStyle = day ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.06)';
+    ctx.fillRect(b.x, by, bw, bh);
+    ctx.fillStyle = css.ground; ctx.fillRect(b.x, gy, bw, groundH);
+    ctx.fillStyle = css.groundEdge; ctx.fillRect(b.x, gy, bw, 3);
+    ctx.fillStyle = '#fff'; ctx.font = font(12); ctx.textAlign = 'left'; ctx.fillText('地面', b.x + 8, gy + 18);
+    if (b.s > 0){
+      ctx.fillStyle = 'rgba(110,110,110,' + (0.08 + 0.22*b.s) + ')';
+      ctx.fillRect(b.x + 2, smokeTop, bw - 4, smokeBot - smokeTop);
+      const n = Math.round(particles.length * b.s);
+      ctx.fillStyle = day ? 'rgba(80,80,80,0.75)' : 'rgba(200,200,200,0.7)';
+      for (let i = 0; i < n; i++){
+        const q = particles[i];
+        ctx.beginPath(); ctx.arc(b.x + 6 + q.x*(bw - 12), smokeTop + 4 + q.y*(smokeBot - smokeTop - 8), q.s, 0, Math.PI*2); ctx.fill();
+      }
+      ctx.fillStyle = txt; ctx.font = font(12); ctx.textAlign = 'left';
+      ctx.fillText('悬浮颗粒物', b.x + 8, smokeBot + 14);
+    }
+    ctx.strokeStyle = day ? '#6f8193' : '#9fb0c2'; ctx.lineWidth = 2; ctx.strokeRect(b.x, by, bw, bh);
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(b.x + 8, by + 8); ctx.lineTo(b.x + 8, by + 50); ctx.stroke();
+    ctx.fillStyle = b.color; ctx.font = font(15, true); ctx.textAlign = 'center';
+    ctx.fillText(b.name, b.x + bw/2, by - 8);
+
+    // 辐射箭头（粗细表示强弱）
+    const xs = [0.22, 0.42, 0.62].map(f => b.x + bw*f);
+    if (day){
+      const w0 = 4.5 * sf * p.light, w1 = w0 * (1 - P.ALPHA*b.s);
+      xs.forEach((x, i) => {
+        if (b.s > 0){
+          arrow(ctx, x, by - 2, x, smokeBot, w0, css.sw);
+          arrow(ctx, x, smokeBot, x, gy - 2, w1, css.sw);
+          if (i !== 1) arrow(ctx, x, smokeTop + 20, x + (i === 0 ? -16 : 16), smokeTop - 2, Math.max(1, w0 - w1), css.sw);
+        } else arrow(ctx, x, by - 2, x, gy - 2, w0, css.sw);
+      });
+    } else {
+      const lwW = Math.max(1.2, 1.5 + 0.25 * (b.T - p.T0));
+      xs.forEach((x, i) => {
+        if (b.s > 0){
+          arrow(ctx, x, gy - 2, x, smokeTop, lwW, css.lw);
+          if (i !== 1) arrow(ctx, x + 14, smokeBot - 2, x + 14, gy - 4, 3.5 * b.s, css.back, true);
+        } else arrow(ctx, x, gy - 2, x, by + 4, lwW, css.lw);
+      });
+    }
+
+    if ($('eqThermo').checked){
+      const tx = b.x + bw - 26, tTop = by + 16, tBot = gy - 18, lo = -5, hi = 45;
+      ctx.fillStyle = '#fff'; ctx.strokeStyle = '#55606b'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.rect(tx - 4, tTop, 8, tBot - tTop); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.arc(tx, tBot + 6, 8, 0, Math.PI*2); ctx.fillStyle = '#d23b2f'; ctx.fill(); ctx.stroke();
+      const f = Math.min(1, Math.max(0, (b.T - lo) / (hi - lo)));
+      const yLiq = tBot - f * (tBot - tTop);
+      ctx.fillStyle = '#d23b2f'; ctx.fillRect(tx - 2.5, yLiq, 5, tBot - yLiq + 2);
+      ctx.strokeStyle = day ? '#55606b' : '#9fb0c2'; ctx.lineWidth = 1; ctx.fillStyle = txt; ctx.font = font(10); ctx.textAlign = 'right';
+      for (let v = 0; v <= 40; v += 10){
+        const y = tBot - (v - lo) / (hi - lo) * (tBot - tTop);
+        ctx.beginPath(); ctx.moveTo(tx - 4, y); ctx.lineTo(tx - 9, y); ctx.stroke();
+        ctx.fillText(v, tx - 11, y + 3);
+      }
+      ctx.fillStyle = b.color; ctx.font = font(20, true); ctx.textAlign = 'center';
+      ctx.fillText(b.T.toFixed(1) + ' ℃', b.x + bw/2, by + bh + 28);
+    } else {
+      ctx.fillStyle = txt; ctx.font = font(14); ctx.textAlign = 'center';
+      ctx.fillText('（未放置温度计）', b.x + bw/2, by + bh + 26);
+    }
+  });
+
+  // 图例
+  ctx.font = font(12); ctx.textAlign = 'left';
+  const ly = h - 12;
+  if (day){
+    ctx.fillStyle = css.sw; ctx.fillRect(10, ly - 6, 18, 4); ctx.fillStyle = txt;
+    ctx.fillText('太阳短波辐射（线越粗，到达地面越多）', 34, ly);
+  } else {
+    ctx.fillStyle = css.lw; ctx.fillRect(10, ly - 6, 18, 4); ctx.fillStyle = txt;
+    ctx.fillText('地面长波辐射', 34, ly);
+    ctx.strokeStyle = css.back; ctx.lineWidth = 3; ctx.setLineDash([6,5]);
+    ctx.beginPath(); ctx.moveTo(130, ly - 4); ctx.lineTo(150, ly - 4); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillText('颗粒物增强的逆辐射（向下）', 156, ly);
+  }
+}
+
+/* ---------- 温度—时间曲线 ---------- */
+function drawChart(){
+  const { ctx, w, h } = fit($('chart'));
+  ctx.fillStyle = css.plot; ctx.fillRect(0,0,w,h);
+  const L = 48, R = 14, T = 30, B = 38, pw = w - L - R, ph = h - T - B;
+  const H = st.hist, x0 = st.start;
+  const span = Math.max(24, Math.ceil((st.t - x0 - 1e-6) / 12) * 12);
+  let lo = +$('t0').value, hi = lo;
+  H.forEach(p => { lo = Math.min(lo, p.A, p.B); hi = Math.max(hi, p.A, p.B); });
+  let ymin = Math.floor((lo - 2) / 5) * 5, ymax = Math.ceil((hi + 2) / 5) * 5;
+  if (ymax - ymin < 20) ymax = ymin + 20;
+  const X = t => L + (t - x0) / span * pw, Y = v => T + (ymax - v) / (ymax - ymin) * ph;
+
+  // 昼夜背景（按时刻整段画出，未运行部分也可见）
+  for (let t = x0; t < x0 + span - 1e-9; ){
+    const e = Math.min(nextBoundary(t), x0 + span);
+    ctx.fillStyle = isDayAt(t) ? css.plotDay : css.plotNight;
+    ctx.fillRect(X(t), T, X(e) - X(t), ph);
+    t = e;
+  }
+  ctx.strokeStyle = css.grid; ctx.lineWidth = 1; ctx.fillStyle = css.muted; ctx.font = font(12);
+  const step = span > 24 ? 4 : 2;
+  ctx.textAlign = 'center';
+  for (let t = x0; t <= x0 + span + 1e-9; t += step){
+    ctx.beginPath(); ctx.moveTo(X(t), T); ctx.lineTo(X(t), T + ph); ctx.stroke();
+    if (pw / (span / step) > 34 || (t - x0) % (step * 2) === 0) ctx.fillText(fmtClock(t).slice(0, 2), X(t), T + ph + 15);
+  }
+  ctx.textAlign = 'right';
+  for (let v = ymin; v <= ymax; v += 5){
+    ctx.beginPath(); ctx.moveTo(L, Y(v)); ctx.lineTo(L + pw, Y(v)); ctx.stroke();
+    ctx.fillText(v, L - 6, Y(v) + 4);
+  }
+  ctx.strokeStyle = css.axis; ctx.strokeRect(L, T, pw, ph);
+  ctx.fillStyle = css.muted; ctx.textAlign = 'center'; ctx.fillText('时刻 / 时', L + pw/2, h - 6);
+  ctx.save(); ctx.translate(13, T + ph/2); ctx.rotate(-Math.PI/2); ctx.fillText('温度 / ℃', 0, 0); ctx.restore();
+
+  const series = [{k:'A', c:css.a, n:'A 箱（洁净）'}, {k:'B', c:css.b, n:'B 箱（烟雾）'}];
+  if (H.length > 1){
+    series.forEach(s => {
+      ctx.strokeStyle = s.c; ctx.lineWidth = 2.5; ctx.lineJoin = 'round'; ctx.beginPath();
+      H.forEach((p, i) => i ? ctx.lineTo(X(p.t), Y(p[s.k])) : ctx.moveTo(X(p.t), Y(p[s.k])));
+      ctx.stroke();
+    });
+    // 最高温取白天，最低温取夜间（至次日日出）
+    const dayIdx = H.map((p, i) => p.day ? i : -1).filter(i => i >= 0);
+    const nightIdx = H.map((p, i) => !p.day ? i : -1).filter(i => i >= 0);
+    const ext = series.map(s => {
+      const pick = (idx, better) => idx.reduce((m, i) => (m < 0 || better(H[i][s.k], H[m][s.k])) ? i : m, -1);
+      const iMax = pick(dayIdx, (a, b) => a > b), iMin = pick(nightIdx, (a, b) => a < b);
+      return { s, iMax, iMin, vMax: iMax >= 0 ? H[iMax][s.k] : null, vMin: iMin >= 0 ? H[iMin][s.k] : null };
+    });
+    ext.forEach((e, j) => {
+      const o = ext[1 - j], marks = [];
+      if (e.iMax >= 0) marks.push([e.iMax, '最高', (o.vMax === null || e.vMax >= o.vMax) ? -10 : 18]);
+      if (e.iMin >= 0) marks.push([e.iMin, '最低', (o.vMin === null || e.vMin <= o.vMin) ? 18 : -10]);
+      marks.forEach(([i, lab, dy]) => {
+        const p = H[i], x = X(p.t), y = Y(p[e.s.k]);
+        ctx.fillStyle = e.s.c; ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI*2); ctx.fill();
+        ctx.font = font(12); ctx.textAlign = x > L + pw - 90 ? 'right' : 'left';
+        ctx.fillText(lab + ' ' + p[e.s.k].toFixed(1) + '（' + fmtClock(p.t) + '）', x + (ctx.textAlign === 'right' ? -6 : 6), y + dy);
+      });
+    });
+  } else {
+    ctx.fillStyle = css.muted; ctx.font = font(14); ctx.textAlign = 'center';
+    ctx.fillText('启动实验后，这里将实时绘制两箱温度随时间的变化', L + pw/2, T + ph/2);
+  }
+  ctx.font = font(13); ctx.textAlign = 'left';
+  let lx = L;
+  series.forEach(s => {
+    ctx.fillStyle = s.c; ctx.fillRect(lx, 12, 18, 3);
+    ctx.fillStyle = css.text; ctx.fillText(s.n, lx + 24, 18); lx += 124;
+  });
+}
+
+/* ---------- 界面同步 ---------- */
+function updateReadout(){
+  const has = $('eqThermo').checked && $('eqBox').checked;
+  $('ra').textContent = has ? st.TA.toFixed(1) : '--';
+  $('rb').textContent = has ? st.TB.toFixed(1) : '--';
+  $('clockOut').textContent = fmtClock(st.t, true);
+  $('elapsedOut').textContent = (st.t - st.start).toFixed(1);
+  const tag = $('phaseTag');
+  tag.textContent = st.isDay ? '白天' : '夜晚';
+  tag.className = 'tag ' + (st.isDay ? 'day' : 'night');
+}
+
+let last = 0;
+function frame(ts){
+  const dt = last ? Math.min(0.1, (ts - last) / 1000) : 0; last = ts;
+  if (st.running) step(dt * prm().speed);
+  drawScene(); drawChart(); updateReadout();
+  if (st.running) $('runState').textContent = st.virtual ? '正在运行“虚拟日”…' : '正在运行' + (st.isDay ? '白天' : '夜晚') + '模式…';
+  requestAnimationFrame(frame);
+}
+
+/* ---------- 事件 ---------- */
+$('eqSmoke').onchange = () => { $('smoke').disabled = !$('eqSmoke').checked; };
+$('smoke').oninput = () => { $('smokeOut').textContent = $('smoke').value + '%'; };
+$('t0').oninput = () => { $('t0Out').textContent = $('t0').value + ' ℃'; if (!st.hist.length) st.TA = st.TB = +$('t0').value; };
+$('light').oninput = () => { $('lightOut').textContent = $('light').value + '%'; };
+$('speed').oninput = () => { $('speedOut').textContent = $('speed').value + ' h/秒'; };
+[$('modeDay'), $('modeNight')].forEach(r => r.onchange = () => { if (!st.hist.length && !st.running) reset(); });
+['eqBox','eqThermo'].forEach(id => $(id).addEventListener('change', () => {
+  if (!$(id).checked && st.running){ pauseRun(); $('warn').textContent = '器材被移除，实验已暂停。'; }
+  else if ($('eqBox').checked && $('eqThermo').checked) $('warn').textContent = '';
+}));
+$('btnRun').onclick = () => st.running ? pauseRun() : startRun();
+$('btnReset').onclick = reset;
+$('btnVDay').onclick = runVirtualDay;
+$('btnRec').onclick = () => { if (!$('eqBox').checked){ $('warn').textContent = '请先放置玻璃箱。'; return; } recordNow(); };
+$('btnAddRow').onclick = () => addRow();
+$('btnClear').onclick = clearTable;
+$('btnCopy').onclick = copyTable;
+$('btnCalc').onclick = calc;
+$('btnFromTable').onclick = fromTable;
+$('btnFromCurve').onclick = fromCurve;
+$('autoRec').onchange = () => {
+  if ($('autoRec').checked && st.hist.length){ const g = +$('recGap').value; st.nextRec = Math.ceil((st.t + 1e-6) / g) * g; }
+};
+$('recGap').onchange = $('autoRec').onchange;
+
+readTokens();
+try {
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readTokens);
+  new MutationObserver(readTokens).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+} catch (e){}
+reset();
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
