@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>颗粒物与昼夜温差</title>
+<title>空气质量、天气与昼夜温差</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- 网络字体异步加载；访问不到时自动使用本机字体，不影响使用 -->
@@ -56,6 +56,8 @@ label.eq input{width:18px;height:18px}
 .row span.k{flex:0 0 76px;color:var(--muted)}
 .row input[type=range]{flex:1;min-width:0}
 .row output{flex:0 0 58px;text-align:right;font-variant-numeric:tabular-nums}
+.row select{flex:1;min-width:0;padding:3px 6px}
+.row select:disabled{opacity:.5}
 .seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
 .seg label{flex:1;text-align:center;padding:6px 0;cursor:pointer;user-select:none}
 .seg input{position:absolute;opacity:0;pointer-events:none}
@@ -107,7 +109,7 @@ td input.ct{min-width:5.2em}
 </head>
 <body>
 <header>
-  <h1>虚拟实验：大气悬浮颗粒物对昼夜温差的影响</h1>
+  <h1>虚拟实验：空气质量与天气对昼夜温差的影响</h1>
   <span class="sub">166中学 地理组</span>
 </header>
 
@@ -120,7 +122,15 @@ td input.ct{min-width:5.2em}
       <label class="eq"><input type="checkbox" id="eqThermo"> 温度计 ×2</label>
       <label class="eq"><input type="checkbox" id="eqSmoke"> 烟雾发生器（仅放入 B 箱）</label>
       <div class="row"><span class="k">烟雾浓度</span><input type="range" id="smoke" min="0" max="100" step="10" value="60" disabled><output id="smokeOut">60%</output></div>
-      <p class="hint">A 箱始终保持洁净，作为对照组。</p>
+      <label class="eq"><input type="checkbox" id="eqWeather"> 天气模拟器（仅作用于 B 箱）</label>
+      <div class="row"><span class="k">B 箱天气</span>
+        <select id="weather" disabled aria-label="B箱天气">
+          <option value="cloudy">多云</option>
+          <option value="clearing">多云转晴</option>
+          <option value="light">小雨</option>
+          <option value="moderate">中雨</option>
+        </select></div>
+      <p class="hint">A 箱始终为“洁净 + 晴天”，作为对照组。B 箱可以只放烟雾、只开天气，或两者叠加。</p>
     </div>
 
     <div class="panel">
@@ -164,9 +174,10 @@ td input.ct{min-width:5.2em}
       </div>
       <canvas id="scene" aria-label="两个玻璃箱示意图"></canvas>
       <div class="readout">
-        <div class="ra">A 箱（洁净）温度：<b id="ra">--</b> ℃</div>
-        <div class="rb">B 箱（烟雾）温度：<b id="rb">--</b> ℃</div>
+        <div class="ra">A 箱（洁净·晴天）温度：<b id="ra">--</b> ℃</div>
+        <div class="rb">B 箱（<span id="rbName">洁净·晴天</span>）温度：<b id="rb">--</b> ℃</div>
       </div>
+      <p class="hint" id="condLine"></p>
     </div>
     <div class="panel">
       <h2>温度—时间曲线</h2>
@@ -175,11 +186,12 @@ td input.ct{min-width:5.2em}
     </div>
     <div class="panel model">
       <h2>模型说明（请先读）</h2>
-      <p>本实验是简化教学模型，忽略风、对流、水汽、云、颗粒物自身吸热等复杂因子，只用来检验物理趋势。</p>
+      <p>本实验是简化教学模型，忽略风、对流、水汽、颗粒物自身吸热等复杂因子，只用来检验物理趋势。</p>
       <ul>
         <li>箱内温度变化 = 地面吸收的太阳短波辐射 − 地面散热（温度越高散热越快）。</li>
         <li>太阳短波辐射：06:00 日出，12:00 最强，18:00 日落，按正弦规律变化。</li>
-        <li>A、B 两箱的热容、初始温度、光照强度、散热条件完全相同，唯一的自变量是 B 箱是否有烟雾及其浓度。</li>
+        <li>A、B 两箱的热容、初始温度、光照强度、散热条件完全相同。自变量是 B 箱的空气质量（烟雾浓度）和天气，可以单独设置，也可以叠加。</li>
+        <li>天气用云量表示：云层白天削弱到达地面的太阳辐射，夜晚增强大气逆辐射，云量越大作用越强。多云转晴为上午多云、12:00–15:00 逐渐转晴、夜间晴朗；小雨、中雨按更厚的云层处理，不计雨水本身的降温。</li>
         <li>两箱从同一初始温度开始，所以最低温请读取夜间至次日日出（18:00–次日 06:00）这一段。</li>
       </ul>
     </div>
@@ -238,16 +250,39 @@ const $ = id => document.getElementById(id);
 
 /* ---------- 简化热量平衡模型（单位：℃ / 小时） ----------
    dT/dt = 短波(t) − K·(T − T0) + 逆辐射增量
-   短波(t) = S0 × 光照 × (1 − ALPHA×烟雾) × sin(π(时刻−6)/12)，仅 06:00–18:00
-   逆辐射增量 = BETA × 烟雾 × G，仅夜晚
-   洁净箱在光照 100% 时，24 h 后恰好回到初始温度，形成一个完整的“日循环”。 */
+   短波(t) = S0 × 光照 × (1 − ALPHA×烟雾) × (1 − CLOUD_SW×云量) × sin(π(时刻−6)/12)，仅 06:00–18:00
+   逆辐射增量 = BETA×G×烟雾 + CLOUD_LW×云量，仅夜晚；夜晚温度只降不升（保留微弱降温）
+   洁净、晴天的箱子在光照 100% 时，24 h 后基本回到初始温度，形成一个完整的“日循环”。 */
 const P = {
   S0: 7.0,      // 正午短波带来的最大升温速率
   K: 0.30,      // 地面散热系数（A、B 相同）
   ALPHA: 0.45,  // 烟雾浓度 100% 时对短波的最大削弱比例
   BETA: 0.6, G: 2.0, // 夜晚：烟雾浓度 100% 时逆辐射增量 = 1.2 ℃/h
+  CLOUD_SW: 0.75, // 云量 100% 时对短波的削弱比例
+  CLOUD_LW: 1.6,  // 夜晚：云量 100% 时逆辐射增量（℃/h）
+  NIGHT_MIN: 0.02, // 夜晚最小降温系数，避免曲线完全水平
   DT: 0.01, HIST_DT: 0.1, MAX_SPAN: 72
 };
+const WEATHER = {
+  sunny:    { name: '晴天' },
+  cloudy:   { name: '多云' },
+  clearing: { name: '多云转晴' },
+  light:    { name: '小雨', rain: 1 },
+  moderate: { name: '中雨', rain: 2 }
+};
+function cloudAt(w, t){   // 云量 0–1
+  const c = clockOf(t);
+  switch (w){
+    case 'cloudy': return 0.6;
+    case 'clearing':
+      if (c >= SUNRISE && c < 12) return 0.7;
+      if (c >= 12 && c < 15) return 0.7 * (15 - c) / 3;
+      return 0;
+    case 'light': return 0.85;
+    case 'moderate': return 1.0;
+    default: return 0;
+  }
+}
 const SUNRISE = 6, SUNSET = 18;
 
 const st = { t:6, start:6, TA:15, TB:15, isDay:true, running:false, virtual:false, segEnd:18, vEnd:30, done:false,
@@ -272,15 +307,23 @@ function prm(){
     T0: +$('t0').value,
     light: +$('light').value / 100,
     smoke: $('eqSmoke').checked ? +$('smoke').value / 100 : 0,
+    weather: $('eqWeather').checked ? $('weather').value : 'sunny',
     speed: +$('speed').value
   };
 }
+function bName(p){   // B 箱条件简称
+  const parts = [p.smoke > 0 ? '烟雾 ' + Math.round(p.smoke * 100) + '%' : '洁净', WEATHER[p.weather].name];
+  return parts.join(' + ');
+}
 function sunFactor(t){ const c = clockOf(t); return (c >= SUNRISE && c <= SUNSET) ? Math.max(0, Math.sin(Math.PI * (c - SUNRISE) / 12)) : 0; }
-function terms(T, s, isDay, t, p){
-  const sw = isDay ? P.S0 * p.light * (1 - P.ALPHA * s) * sunFactor(t) : 0;
-  const back = isDay ? 0 : P.BETA * s * P.G;
+function terms(T, s, w, isDay, t, p){
+  const cl = cloudAt(w, t);
+  const sw = isDay ? P.S0 * p.light * (1 - P.ALPHA * s) * (1 - P.CLOUD_SW * cl) * sunFactor(t) : 0;
+  const back = isDay ? 0 : P.BETA * s * P.G + P.CLOUD_LW * cl;
   const loss = P.K * (T - p.T0);
-  return { rate: sw - loss + back, sw, back, loss };
+  let rate = sw - loss + back;
+  if (!isDay) rate = Math.min(-P.NIGHT_MIN * Math.max(0, T - p.T0), rate);
+  return { rate, sw, back, loss, cl };
 }
 
 function pushHist(){ st.hist.push({ t: st.t, A: st.TA, B: st.TB, day: st.isDay }); st.lastHist = st.t; }
@@ -299,7 +342,7 @@ function step(hours){
         return;
       }
     }
-    const fa = terms(st.TA, 0, st.isDay, st.t, p), fb = terms(st.TB, p.smoke, st.isDay, st.t, p);
+    const fa = terms(st.TA, 0, 'sunny', st.isDay, st.t, p), fb = terms(st.TB, p.smoke, p.weather, st.isDay, st.t, p);
     st.TA += fa.rate * P.DT;
     st.TB += fb.rate * P.DT;
     st.t = Math.round((st.t + P.DT) * 1000) / 1000;
@@ -438,8 +481,8 @@ function calc(){
   const c = $('conclusion');
   if (r.A === null || r.B === null){ c.innerHTML = '<span class="hint">请填写两箱的最高温和最低温。</span>'; return; }
   const d = r.A - r.B;
-  let s = 'A 箱昼夜温差 <span class="ca">' + r.A.toFixed(1) + ' ℃</span>，B 箱昼夜温差 <span class="cb">' + r.B.toFixed(1) + ' ℃</span>。';
-  if (Math.abs(d) < 0.05) s += '两箱温差相同。（B 箱是否放入了烟雾？）';
+  let s = 'A 箱（洁净·晴天）昼夜温差 <span class="ca">' + r.A.toFixed(1) + ' ℃</span>，B 箱（' + bName(prm()) + '）昼夜温差 <span class="cb">' + r.B.toFixed(1) + ' ℃</span>。';
+  if (Math.abs(d) < 0.05) s += '两箱温差相同。（B 箱是否放入了烟雾或开启了天气模拟器？）';
   else s += (d > 0 ? 'B 箱比 A 箱小 ' : 'B 箱比 A 箱大 ') + Math.abs(d).toFixed(1) + ' ℃。';
   s += '<br><span class="hint" style="margin:0">思考：B 箱的最高温为什么偏低？最低温为什么偏高？分别对应大气的哪种作用？</span>';
   c.innerHTML = s;
@@ -532,53 +575,91 @@ function drawScene(){
   const gap = Math.max(30, w * 0.08);
   const bw = Math.min(250, (w - gap - 24) / 2), bh = 200;
   const by = 100, groundH = 26;
+  const clB = cloudAt(p.weather, st.t);
   const boxes = [
-    { x: w/2 - gap/2 - bw, name: 'A 箱（洁净）', color: css.a, T: st.TA, s: 0 },
-    { x: w/2 + gap/2,      name: 'B 箱（烟雾 ' + Math.round(p.smoke*100) + '%）', color: css.b, T: st.TB, s: p.smoke }
+    { x: w/2 - gap/2 - bw, name: 'A 箱（洁净·晴天）', color: css.a, T: st.TA, s: 0, cl: 0, w: 'sunny' },
+    { x: w/2 + gap/2,      name: 'B 箱（' + bName(p) + '）', color: css.b, T: st.TB, s: p.smoke, cl: clB, w: p.weather }
   ];
-  const gy = by + bh - groundH, smokeTop = by + 18, smokeBot = by + bh * 0.48;
+  const gy = by + bh - groundH;
 
   boxes.forEach(b => {
+    // 介质分层：云层在上，烟雾在下；每层记录对短波的透过比例
+    const layers = [];
+    const hasCloud = b.w !== 'sunny';   // 多云转晴转晴后云层消失
+    if (hasCloud && b.cl > 0.01) layers.push({ kind: 'cloud', top: by + 8, bot: by + 46, trans: 1 - P.CLOUD_SW * b.cl, amt: b.cl });
+    if (b.s > 0){
+      const top = layers.length ? by + 66 : by + 18;
+      layers.push({ kind: 'smoke', top, bot: top + bh * (layers.length ? 0.26 : 0.3), trans: 1 - P.ALPHA * b.s, amt: b.s });
+    }
+
     ctx.fillStyle = day ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.06)';
     ctx.fillRect(b.x, by, bw, bh);
     ctx.fillStyle = css.ground; ctx.fillRect(b.x, gy, bw, groundH);
     ctx.fillStyle = css.groundEdge; ctx.fillRect(b.x, gy, bw, 3);
     ctx.fillStyle = '#fff'; ctx.font = font(12); ctx.textAlign = 'left'; ctx.fillText('地面', b.x + 8, gy + 18);
-    if (b.s > 0){
-      ctx.fillStyle = 'rgba(110,110,110,' + (0.08 + 0.22*b.s) + ')';
-      ctx.fillRect(b.x + 2, smokeTop, bw - 4, smokeBot - smokeTop);
-      const n = Math.round(particles.length * b.s);
-      ctx.fillStyle = day ? 'rgba(80,80,80,0.75)' : 'rgba(200,200,200,0.7)';
-      for (let i = 0; i < n; i++){
-        const q = particles[i];
-        ctx.beginPath(); ctx.arc(b.x + 6 + q.x*(bw - 12), smokeTop + 4 + q.y*(smokeBot - smokeTop - 8), q.s, 0, Math.PI*2); ctx.fill();
+
+    layers.forEach(L => {
+      if (L.kind === 'cloud'){
+        const rain = WEATHER[b.w].rain || 0;
+        if (rain){   // 静态雨丝
+          ctx.strokeStyle = day ? 'rgba(60,110,190,0.55)' : 'rgba(140,180,235,0.6)'; ctx.lineWidth = 1.2;
+          const n = rain === 1 ? 22 : 44;
+          for (let i = 0; i < n; i++){
+            const q = particles[i * 3 % particles.length];
+            const x = b.x + 10 + q.x * (bw - 44), y = L.bot + 4 + q.y * (gy - L.bot - 22);
+            ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - 3, y + 12); ctx.stroke();
+          }
+        }
+        const g = rain ? 150 : 225, a = 0.35 + 0.55 * L.amt;
+        ctx.fillStyle = day ? 'rgba(' + g + ',' + (g + 5) + ',' + (g + 12) + ',' + a + ')' : 'rgba(120,132,150,' + a + ')';
+        for (let i = 0; i < 7; i++){
+          const cx = b.x + 18 + i * (bw - 60) / 6, r = 13 + (i % 3) * 4;
+          ctx.beginPath(); ctx.arc(cx, L.top + 20 - (i % 2) * 5, r, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.fillStyle = txt; ctx.font = font(12); ctx.textAlign = 'left';
+        ctx.fillText('云层（云量 ' + Math.round(L.amt * 100) + '%）', b.x + 8, L.bot + 13);
+      } else {
+        ctx.fillStyle = 'rgba(110,110,110,' + (0.08 + 0.22*L.amt) + ')';
+        ctx.fillRect(b.x + 2, L.top, bw - 4, L.bot - L.top);
+        const n = Math.round(particles.length * L.amt);
+        ctx.fillStyle = day ? 'rgba(80,80,80,0.75)' : 'rgba(200,200,200,0.7)';
+        for (let i = 0; i < n; i++){
+          const q = particles[i];
+          ctx.beginPath(); ctx.arc(b.x + 6 + q.x*(bw - 12), L.top + 4 + q.y*(L.bot - L.top - 8), q.s, 0, Math.PI*2); ctx.fill();
+        }
+        ctx.fillStyle = txt; ctx.font = font(12); ctx.textAlign = 'left';
+        ctx.fillText('悬浮颗粒物', b.x + 8, L.bot + 14);
       }
-      ctx.fillStyle = txt; ctx.font = font(12); ctx.textAlign = 'left';
-      ctx.fillText('悬浮颗粒物', b.x + 8, smokeBot + 14);
-    }
+    });
+
     ctx.strokeStyle = day ? '#6f8193' : '#9fb0c2'; ctx.lineWidth = 2; ctx.strokeRect(b.x, by, bw, bh);
     ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.moveTo(b.x + 8, by + 8); ctx.lineTo(b.x + 8, by + 50); ctx.stroke();
-    ctx.fillStyle = b.color; ctx.font = font(15, true); ctx.textAlign = 'center';
+    let fs = 15; ctx.font = font(fs, true);
+    while (fs > 11 && ctx.measureText(b.name).width > bw + gap * 0.8){ fs--; ctx.font = font(fs, true); }
+    ctx.fillStyle = b.color; ctx.textAlign = 'center';
     ctx.fillText(b.name, b.x + bw/2, by - 8);
 
-    // 辐射箭头（粗细表示强弱）
+    // 辐射箭头（粗细表示强弱），逐层削弱
     const xs = [0.22, 0.42, 0.62].map(f => b.x + bw*f);
     if (day){
-      const w0 = 4.5 * sf * p.light, w1 = w0 * (1 - P.ALPHA*b.s);
       xs.forEach((x, i) => {
-        if (b.s > 0){
-          arrow(ctx, x, by - 2, x, smokeBot, w0, css.sw);
-          arrow(ctx, x, smokeBot, x, gy - 2, w1, css.sw);
-          if (i !== 1) arrow(ctx, x, smokeTop + 20, x + (i === 0 ? -16 : 16), smokeTop - 2, Math.max(1, w0 - w1), css.sw);
-        } else arrow(ctx, x, by - 2, x, gy - 2, w0, css.sw);
+        let y = by - 2, wd = 4.5 * sf * p.light;
+        layers.forEach(L => {
+          arrow(ctx, x, y, x, L.bot, wd, css.sw);
+          const out = wd * (1 - L.trans);
+          if (i !== 1) arrow(ctx, x, L.top + 20, x + (i === 0 ? -16 : 16), L.top - 2, Math.max(1, out), css.sw);
+          wd *= L.trans; y = L.bot;
+        });
+        arrow(ctx, x, y, x, gy - 2, wd, css.sw);
       });
     } else {
       const lwW = Math.max(1.2, 1.5 + 0.25 * (b.T - p.T0));
+      const back = P.BETA * P.G * b.s + P.CLOUD_LW * b.cl;
       xs.forEach((x, i) => {
-        if (b.s > 0){
-          arrow(ctx, x, gy - 2, x, smokeTop, lwW, css.lw);
-          if (i !== 1) arrow(ctx, x + 14, smokeBot - 2, x + 14, gy - 4, 3.5 * b.s, css.back, true);
+        if (layers.length){
+          arrow(ctx, x, gy - 2, x, layers[0].top, lwW, css.lw);
+          if (i !== 1) arrow(ctx, x + 14, layers[layers.length - 1].bot - 2, x + 14, gy - 4, 1.2 + 1.6 * back, css.back, true);
         } else arrow(ctx, x, gy - 2, x, by + 4, lwW, css.lw);
       });
     }
@@ -616,7 +697,7 @@ function drawScene(){
     ctx.fillText('地面长波辐射', 34, ly);
     ctx.strokeStyle = css.back; ctx.lineWidth = 3; ctx.setLineDash([6,5]);
     ctx.beginPath(); ctx.moveTo(130, ly - 4); ctx.lineTo(150, ly - 4); ctx.stroke(); ctx.setLineDash([]);
-    ctx.fillText('颗粒物增强的逆辐射（向下）', 156, ly);
+    ctx.fillText('颗粒物 / 云层增强的逆辐射（向下）', 156, ly);
   }
 }
 
@@ -656,7 +737,7 @@ function drawChart(){
   ctx.fillStyle = css.muted; ctx.textAlign = 'center'; ctx.fillText('时刻 / 时', L + pw/2, h - 6);
   ctx.save(); ctx.translate(13, T + ph/2); ctx.rotate(-Math.PI/2); ctx.fillText('温度 / ℃', 0, 0); ctx.restore();
 
-  const series = [{k:'A', c:css.a, n:'A 箱（洁净）'}, {k:'B', c:css.b, n:'B 箱（烟雾）'}];
+  const series = [{k:'A', c:css.a, n:'A 箱（洁净·晴天）'}, {k:'B', c:css.b, n:'B 箱（' + bName(prm()) + '）'}];
   if (H.length > 1){
     series.forEach(s => {
       ctx.strokeStyle = s.c; ctx.lineWidth = 2.5; ctx.lineJoin = 'round'; ctx.beginPath();
@@ -690,7 +771,7 @@ function drawChart(){
   let lx = L;
   series.forEach(s => {
     ctx.fillStyle = s.c; ctx.fillRect(lx, 12, 18, 3);
-    ctx.fillStyle = css.text; ctx.fillText(s.n, lx + 24, 18); lx += 124;
+    ctx.fillStyle = css.text; ctx.fillText(s.n, lx + 24, 18); lx += 24 + ctx.measureText(s.n).width + 22;
   });
 }
 
@@ -699,6 +780,14 @@ function updateReadout(){
   const has = $('eqThermo').checked && $('eqBox').checked;
   $('ra').textContent = has ? st.TA.toFixed(1) : '--';
   $('rb').textContent = has ? st.TB.toFixed(1) : '--';
+  const p = prm(), name = bName(p);
+  if ($('rbName').textContent !== name) $('rbName').textContent = name;
+  const cl = cloudAt(p.weather, st.t);
+  const cond = '实验条件：A 箱为对照组（洁净、晴天）；B 箱为' +
+    (p.smoke > 0 ? '烟雾浓度 ' + Math.round(p.smoke * 100) + '%' : '洁净') + '、' + WEATHER[p.weather].name +
+    (p.weather !== 'sunny' ? '（当前云量 ' + Math.round(cl * 100) + '%）' : '') + '。' +
+    (p.smoke > 0 && p.weather !== 'sunny' ? '两个因素叠加作用。' : '');
+  if ($('condLine').textContent !== cond) $('condLine').textContent = cond;
   $('clockOut').textContent = fmtClock(st.t, true);
   $('elapsedOut').textContent = (st.t - st.start).toFixed(1);
   const tag = $('phaseTag');
@@ -717,6 +806,7 @@ function frame(ts){
 
 /* ---------- 事件 ---------- */
 $('eqSmoke').onchange = () => { $('smoke').disabled = !$('eqSmoke').checked; };
+$('eqWeather').onchange = () => { $('weather').disabled = !$('eqWeather').checked; };
 $('smoke').oninput = () => { $('smokeOut').textContent = $('smoke').value + '%'; };
 $('t0').oninput = () => { $('t0Out').textContent = $('t0').value + ' ℃'; if (!st.hist.length) st.TA = st.TB = +$('t0').value; };
 $('light').oninput = () => { $('lightOut').textContent = $('light').value + '%'; };
